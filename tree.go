@@ -5,22 +5,22 @@ import (
 	"fmt"
 )
 
-type node struct {
+type treeNode struct {
 	label    string
 	handler  Handler
-	children []*node
+	children []*treeNode
 }
 
 // String() implements the Stringer interface,
 // so we can easily see the current state of the
 // tree, mostly for debugging purposes.
-func (n *node) String() string {
+func (n *treeNode) String() string {
 	return n.printTree("")
 }
 
 // printTree is a utility method to pretty print
 // the tree during the String() call.
-func (n *node) printTree(prefix string) string {
+func (n *treeNode) printTree(prefix string) string {
 	buff := &bytes.Buffer{}
 	fmt.Fprintf(buff, prefix+"%s => %v\n", n.label, n.handler != nil)
 	for _, child := range n.children {
@@ -31,26 +31,26 @@ func (n *node) printTree(prefix string) string {
 
 // getHandler returns the handler registered with the provided
 // route, if it exists, returns nil otherwise
-func (n *node) getHandler(route string) Handler {
-    // If the current route is longer than the requested
-    // route, we don't have a handler registered with the
-    // tree.
+func (n *treeNode) getHandler(route string) Handler {
+	// If the current route is longer than the requested
+	// route, we don't have a handler registered with the
+	// tree.
 	if n.label > route {
-        return nil
-    }
+		return nil
+	}
 
-    // If the routes match, return the handler.
-    if n.label == route {
+	// If the routes match, return the handler.
+	if n.label == route {
 		return n.handler
 	}
 
-    offset := len(n.label)
+	offset := len(n.label)
 
-    for _, child := range n.children {
-        if child.label[0] == route[offset] {
-            return child.getHandler(route[offset:])
-        }
-    }
+	for _, child := range n.children {
+		if child.label[0] == route[offset] {
+			return child.getHandler(route[offset:])
+		}
+	}
 
 	return nil
 }
@@ -78,7 +78,7 @@ func (n *node) getHandler(route string) Handler {
 // #5 If no children start with the same character as the next new label
 //    character, we create a new child for the current node with the rest
 //    of the label.
-func (n *node) insertNode(label string, handler Handler) {
+func (n *treeNode) insertNode(label string, handler Handler) {
 	// Initialize the empty node element
 	if len(n.label) == 0 && len(n.children) == 0 {
 		n.label = label
@@ -86,37 +86,37 @@ func (n *node) insertNode(label string, handler Handler) {
 		return
 	}
 
-    // #1 Find the common prefix size
-    prefixSize := findPrefixLength(n.label, label)
+	// #1 Find the common prefix size
+	prefixSize := findPrefixLength(n.label, label)
 
 	// #2 If the current node is not the whole prefix, we need
-    // to split the current node into the prefix node and a child
-    // node representing the current node.
+	// to split the current node into the prefix node and a child
+	// node representing the current node.
 	if len(n.label) > prefixSize {
 		n.splitNode(prefixSize)
 	}
 
 	// #3 If the
-    if len(label) == prefixSize {
-        if n.handler != nil {
-            //@TODO: Build full path here, for debugging purposes.
-            panic("a handler is already registered for label " + label)
-        }
+	if len(label) == prefixSize {
+		if n.handler != nil {
+			//@TODO: Build full path here, for debugging purposes.
+			panic("a handler is already registered for label " + label)
+		}
 
-        n.handler = handler
-        return
-    }
+		n.handler = handler
+		return
+	}
 
-    // #4
-    for _, child := range n.children {
-        if child.label[0] == label[prefixSize] {
-            child.insertNode(label[prefixSize:], handler)
-            return
-        }
-    }
+	// #4
+	for _, child := range n.children {
+		if child.label[0] == label[prefixSize] {
+			child.insertNode(label[prefixSize:], handler)
+			return
+		}
+	}
 
-    // #5 There is no child that matches, create a new child.
-	newChild := node{
+	// #5 There is no child that matches, create a new child.
+	newChild := treeNode{
 		label:   label[prefixSize:],
 		handler: handler,
 	}
@@ -149,8 +149,8 @@ func min(a, b int) int {
 // splitNode splits the current node into two,
 // in order to create room for future insertions,
 // and moves the handler to the child node.
-func (n *node) splitNode(splitPoint int) {
-	child := node{
+func (n *treeNode) splitNode(splitPoint int) {
+	child := treeNode{
 		label:    n.label[splitPoint:],
 		handler:  n.handler,
 		children: n.children,
@@ -158,5 +158,5 @@ func (n *node) splitNode(splitPoint int) {
 
 	n.label = n.label[:splitPoint]
 	n.handler = nil
-	n.children = []*node{&child}
+	n.children = []*treeNode{&child}
 }
