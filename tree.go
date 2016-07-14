@@ -31,10 +31,10 @@ func (n *treeNode) printTree(level int) string {
 		fmt.Fprintf(buff, "└── ")
 	}
 
-    hasHandler := ""
-    if n.handler != nil {
-        hasHandler = "✓"
-    }
+	hasHandler := ""
+	if n.handler != nil {
+		hasHandler = "✓"
+	}
 	fmt.Fprintf(buff, "%s %s\n", n.label, hasHandler)
 	for _, child := range n.children {
 		fmt.Fprintf(buff, child.printTree(level+1))
@@ -137,21 +137,21 @@ func (n *treeNode) insertNode(label string, handler Handler) {
 	}
 
 	// #4
-    var nextNode *treeNode
-    for _, child := range n.children {
-        if child.label[0] == byte('*') {
-            nextNode = child
-            break
-        }
+	var nextNode *treeNode
+	for _, child := range n.children {
+		if child.label[0] == byte('*') {
+			nextNode = child
+			break
+		}
 		if child.label[0] == label[prefixSize] && nextNode == nil {
-            nextNode = child
+			nextNode = child
 		}
 	}
 
-    if nextNode != nil {
-        nextNode.insertNode(label[prefixSize:], handler)
-        return
-    }
+	if nextNode != nil {
+		nextNode.insertNode(label[prefixSize:], handler)
+		return
+	}
 
 	// #5 There is no child that matches, create a new child.
 	newChild := treeNode{
