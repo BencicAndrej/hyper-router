@@ -14,6 +14,10 @@ func testHandler(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 func TestTreeAddAndGet(t *testing.T) {
 	tree := treeNode{}
 
+	defer func() {
+		fmt.Print(tree.String())
+	}()
+
 	routes := [...]string{
 		"/api/v1/test",
 		"/api/v1/foo/bar",
@@ -39,6 +43,8 @@ func TestTreeAddAndGet(t *testing.T) {
 		{"/api/v1/test", true},
 		{"/api/v1/example", true},
 		{"/hello/world", false},
+		{"/api/v1/project/5", true},
+		{"/api/v1/query/really/long/string", true},
 	}
 
 	for _, test := range tests {
@@ -72,4 +78,23 @@ func TestFindPrefixSize(t *testing.T) {
 			t.Errorf(`findPrefix("%s", "%s") got "%s", wanted "%s"`, test.first, test.second, got, test.wanted)
 		}
 	}
+}
+
+func TestFindVariable(t *testing.T) {
+	tests := []struct {
+		input  string
+		skip   int
+		wanted int
+	}{
+		{"/api/v1/project/:projectId", len("/api/v1"), 9},
+	}
+
+	for _, test := range tests {
+		got, _ := findVariable(test.input[test.skip:])
+
+		if got != test.wanted {
+			t.Errorf("findVariable('%s') got %d, wanted %d", test.input, got, test.wanted)
+		}
+	}
+
 }

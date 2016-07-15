@@ -3,6 +3,7 @@ package hyper
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 )
@@ -45,6 +46,10 @@ func (n *treeNode) printTree(level int) string {
 // getHandler returns the handler registered with the provided
 // route, if it exists, returns nil otherwise
 func (n *treeNode) getHandler(route string) Handler {
+	if n.isCatchAll() && len(route) > 0 {
+		return n.handler
+	}
+
 	// If the current route is longer than the requested
 	// route, we don't have a handler registered with the
 	// tree.
@@ -59,10 +64,19 @@ func (n *treeNode) getHandler(route string) Handler {
 
 	offset := len(n.label)
 
+	var nextNode *treeNode
 	for _, child := range n.children {
-		if child.label[0] == route[offset] {
-			return child.getHandler(route[offset:])
+		if child.label[0] == byte('*') {
+			nextNode = child
+			break
 		}
+		if child.label[0] == route[offset] && nextNode == nil {
+			nextNode = child
+		}
+	}
+
+	if nextNode != nil {
+		return nextNode.getHandler(route[offset:])
 	}
 
 	return nil
@@ -96,6 +110,7 @@ func (n *treeNode) insertNode(label string, handler Handler) {
 	if len(n.label) == 0 && len(n.children) == 0 {
 		n.label = label
 		n.handler = handler
+		log.Printf("Added node %s", n.label)
 		return
 	}
 
@@ -139,6 +154,10 @@ func (n *treeNode) insertNode(label string, handler Handler) {
 	// #4
 	var nextNode *treeNode
 	for _, child := range n.children {
+		log.Printf("Found Child: %s", child.label)
+		if string(child.label) == "" {
+			panic(fmt.Sprintf("Parent node: %s, label: %s", n.label, label))
+		}
 		if child.label[0] == byte('*') {
 			nextNode = child
 			break
@@ -154,10 +173,24 @@ func (n *treeNode) insertNode(label string, handler Handler) {
 	}
 
 	// #5 There is no child that matches, create a new child.
+	if variableSize, ok := findVariable(label[prefixSize:]); ok {
+		newChild := &treeNode{
+			label:   label[prefixSize : prefixSize+variableSize+1],
+			handler: nil,
+		}
+		log.Printf("Added node before wild %s", newChild.label)
+
+		n.children = append(n.children, newChild)
+
+		newChild.insertNode(label[prefixSize+variableSize+1:], handler)
+		return
+	}
+
 	newChild := treeNode{
 		label:   label[prefixSize:],
 		handler: handler,
 	}
+	log.Printf("Added node at last %s", newChild.label)
 
 	n.children = append(n.children, &newChild)
 }
@@ -180,6 +213,16 @@ func findPrefixLength(a, b string, breakAt string) int {
 	}
 
 	return i
+}
+
+func findVariable(str string) (pos int, ok bool) {
+	for i, char := range str {
+		if strings.ContainsAny(string(char), ":*") {
+			return i, true
+		}
+	}
+
+	return 0, false
 }
 
 // Since there is no math.Min() for int type,
