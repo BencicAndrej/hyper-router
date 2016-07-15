@@ -1,10 +1,10 @@
 package hyper
 
 import (
+	"fmt"
 	"golang.org/x/net/context"
 	"net/http"
 	"testing"
-    "fmt"
 )
 
 var emptyHandler = HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request) {})
@@ -61,6 +61,24 @@ func TestInsertRoute(t *testing.T) {
 			routes: []string{"/*wild"},
 			want:   branch("/", leaf("*wild")),
 		},
+		{
+			routes: []string{
+				"/api/v1/users/:id",
+				"/api/v1/users/:id/sites",
+				"/api/v1",
+				"/api/v1/users/:id/sites/*url",
+			},
+			want: leafBranch(
+				"/api/v1",
+				leafBranch(
+					"/users/",
+					leafBranch(
+						":id",
+						leafBranch("/sites", branch("/", leaf("*url"))),
+					),
+				),
+			),
+		},
 	}
 
 	for _, test := range tests {
@@ -97,38 +115,38 @@ func TestRouteInsertionFailures(t *testing.T) {
 			routes: []string{"/foo/baz", "/:bar/baz"},
 			panic:  "handler for route '/:bar/baz' already exists",
 		},
-        {
-            routes: []string{"/foo/", "/foo/bar", "/foo/*baz"},
-            panic:  "handler for route '/foo/baz already exists",
-        },
-        {
-            routes: []string{"/foo/bar", "/foo/:baz"},
-            panic:  "handler for route '/foo/:baz already exists",
-        },
-        {
-            routes: []string{"/foo/*bar/baz"},
-            panic:  "wildcard parameter must be the last element of the route '/foo/*bar/baz'",
-        },
+		{
+			routes: []string{"/foo/", "/foo/bar", "/foo/*baz"},
+			panic:  "handler for route '/foo/baz already exists",
+		},
+		{
+			routes: []string{"/foo/bar", "/foo/:baz"},
+			panic:  "handler for route '/foo/:baz already exists",
+		},
+		{
+			routes: []string{"/foo/*bar/baz"},
+			panic:  "wildcard parameter must be the last element of the route '/foo/*bar/baz'",
+		},
 	}
 
 	for _, test := range tests {
 		func() {
 			defer func() {
 				r := recover()
-                //@TODO: Fix the error handling
+				//@TODO: Fix the error handling
 				//if r != test.panic {
 				//	t.Errorf("node.insert(): got panic event \"%v\", wanted \"%s\"", r, test.panic)
 				//}
 				if r == nil {
-                    t.Errorf(fmt.Sprintf("node.insert('%s'): expected panic, got none", test.routes))
-                }
-                //else {
-                //    fmt.Printf("recieved panic event: %s\n", r)
-                //}
+					t.Errorf(fmt.Sprintf("node.insert('%s'): expected panic, got none", test.routes))
+				}
+				//else {
+				//    fmt.Printf("recieved panic event: %s\n", r)
+				//}
 			}()
 
 			tree := loadTree(test.routes...)
-            fmt.Print(tree)
+			fmt.Print(tree)
 		}()
 	}
 }
@@ -165,22 +183,37 @@ func TestNodeCanSplit(t *testing.T) {
 
 func TestAddSingleRoute(t *testing.T) {
 	tests := []struct {
-        route string
-        want  bool
+		route string
+		want  bool
 	}{
 		{"/api/v1/hello/world", true},
 		{"/route/404", false},
 	}
 
-    tree := loadTree("/api/v1/hello/world")
+	tree := loadTree("/api/v1/hello/world")
 
 	for _, test := range tests {
-        handler := tree.getHandler(test.route)
+		handler := tree.getHandler(test.route)
 
-        if (handler != nil) != test.want {
-            t.Errorf("node.getHandler('%s'): %v, wanded %v", test.route, handler != nil, test.want)
-        }
+		if (handler != nil) != test.want {
+			t.Errorf("node.getHandler('%s'): %v, wanded %v", test.route, handler != nil, test.want)
+		}
 	}
+}
+
+func TestGetHandler(t *testing.T) {
+	tree := loadTree(
+		"/api/v1/foo/bar",
+		"/login",
+		"/api/v1/users",
+		"/logout",
+		"/api/v1/users/:id",
+		"/api/v1/users/:id/sites",
+		"/api/v1/users/:id/sites/*url",
+		"/api/v1/usecases/:type/:id",
+	)
+
+	fmt.Print(tree)
 }
 
 func loadTree(routes ...string) *node {
