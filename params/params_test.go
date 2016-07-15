@@ -1,4 +1,4 @@
-package request
+package params
 
 import (
 	"golang.org/x/net/context"

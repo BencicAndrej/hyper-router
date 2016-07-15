@@ -1,8 +1,8 @@
 package hyper
 
 import (
-	"context"
 	"fmt"
+	"golang.org/x/net/context"
 	"net/http"
 )
 
@@ -31,7 +31,7 @@ func (f HandlerFunc) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *ht
 // Router is a http.Handler that is responsible for
 // registering and dispatching other handlers to correct routes.
 type Router struct {
-	handlerTrees map[string]*treeNode
+	handlerTrees map[string]*node
 }
 
 // NewRouter return the an empty Router.
@@ -82,17 +82,17 @@ func (r *Router) Handle(method string, path string, handler Handler) {
 
 	// If no routes are defined yet, create a new tree.
 	if r.handlerTrees == nil {
-		r.handlerTrees = make(map[string]*treeNode)
+		r.handlerTrees = make(map[string]*node)
 	}
 
 	// If tree does not exist for `method`, create a new one.
 	root, ok := r.handlerTrees[method]
 	if !ok {
-		root = new(treeNode)
+		root = new(node)
 		r.handlerTrees[method] = root
 	}
 
-	root.insertNode(path, handler)
+	root.insert(path, handler)
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {

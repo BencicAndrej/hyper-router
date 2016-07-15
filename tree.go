@@ -3,125 +3,284 @@ package hyper
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"strings"
 )
 
-type treeNode struct {
-	label    string
-	handler  Handler
-	children []*treeNode
+type node struct {
+	label   string
+	handler Handler
+
+	parent *node
+	// children represents an array of child nodes, ordered by priority:
+	// wildcard then parameters then static.
+	children []*node
 }
 
-// String() implements the Stringer interface,
-// so we can easily see the current state of the
-// tree, mostly for debugging purposes.
-func (n *treeNode) String() string {
-	return n.printTree("")
-}
-
-// printTree is a utility method to pretty print
-// the tree during the String() call.
-func (n *treeNode) printTree(prefix string) string {
-	buff := &bytes.Buffer{}
-	fmt.Fprintf(buff, prefix+"%s => %v\n", n.label, n.handler != nil)
-	for _, child := range n.children {
-		fmt.Fprintf(buff, child.printTree(prefix+"\t"))
-	}
-	return string(buff.Bytes())
-}
-
-// getHandler returns the handler registered with the provided
-// route, if it exists, returns nil otherwise
-func (n *treeNode) getHandler(route string) Handler {
-	// If the current route is longer than the requested
-	// route, we don't have a handler registered with the
-	// tree.
-	if n.label > route {
+func (tree node) getHandler(label string) Handler {
+	if tree.label == "" && tree.handler == nil {
 		return nil
 	}
 
-	// If the routes match, return the handler.
-	if n.label == route {
-		return n.handler
+	if tree.isWildcard() {
+		return tree.handler
+	}
+	if tree.isParameter() {
+		paramEnd := strings.Index(label, "/")
+		if paramEnd == -1 && len(tree.children) == 0 {
+			return tree.handler
+		}
+
+		for _, child := range tree.children {
+			if child.isWildcard() || child.isParameter() || child.label[0] == byte(label[paramEnd]) {
+				return child.getHandler(label[paramEnd:])
+			}
+		}
 	}
 
-	offset := len(n.label)
+	if tree.label == label {
+		if len(tree.children) == 0 {
+			return tree.handler
+		}
 
-	for _, child := range n.children {
-		if child.label[0] == route[offset] {
-			return child.getHandler(route[offset:])
+		for _, child := range tree.children {
+			if child.isWildcard() || child.isParameter() || child.label[0] == byte(label[len(tree.label)]) {
+				return child.getHandler(label[len(tree.label):])
+			}
 		}
 	}
 
 	return nil
 }
 
-// insertNode associates tha handler with the label.
+// insert associates the new handler with the route provided,
+// and panics if encounters any anomalies.
 //
-// Sequence of operations:
-//
-// #1 Find the common prefix size
-//
-// #2 If the prefix is shorter that the current node,
-//    we need to split the current node, pass the handler to that child,
-//    and add a new child with the new handler.
-//
-// #3 If the prefix is the same length as both the current node and
-//    the provided label, and we have two handlers registered on the same
-//    route, so we panic! Otherwise, we just register the new handler to
-//    the current node.
-//
-// #4 If the prefix is longer that the current node, we look for a child
-//    of the current node that starts with the first character of the
-//    remainder of the label, and recursively continue until there are
-//    no more children that match the label
-//
-// #5 If no children start with the same character as the next new label
-//    character, we create a new child for the current node with the rest
-//    of the label.
-func (n *treeNode) insertNode(label string, handler Handler) {
-	// Initialize the empty node element
-	if len(n.label) == 0 && len(n.children) == 0 {
-		n.label = label
-		n.handler = handler
-		return
-	}
-
-	// #1 Find the common prefix size
-	prefixSize := findPrefixLength(n.label, label)
-
-	// #2 If the current node is not the whole prefix, we need
-	// to split the current node into the prefix node and a child
-	// node representing the current node.
-	if len(n.label) > prefixSize {
-		n.splitNode(prefixSize)
-	}
-
-	// #3 If the
-	if len(label) == prefixSize {
-		if n.handler != nil {
-			//@TODO: Build full path here, for debugging purposes.
-			panic("a handler is already registered for label " + label)
+// Method flow:
+// #1) If the current node is empty, populate it and exit.
+// #2) If label and tree.label are equal, we match or panic if handler exists.
+// #3) If the prefix is equal to the label, we must split the node and associate the handler with the parent node.
+// #4) If the prefix < label && prefix < tree.label && prefix > 0, split and pass to new node.
+// #5) If the prefix is equal to the tree.label, we must create a new node, or pass insertion to a child
+// #6) If the prefix is equal to 0, we must panic
+func (tree *node) insert(label string, handler Handler) *node {
+	// #1) If tree is empty populate the current element.
+	if tree.label == "" && tree.handler == nil {
+		// Label must start with a '/'.
+		if len(label) == 0 || label[0] != byte('/') {
+			panic(fmt.Sprintf("route '%s' must start with '/'", tree.prefix()+label))
 		}
 
-		n.handler = handler
-		return
+		if variablePos := strings.IndexAny(label, ":*"); variablePos != -1 {
+			// Will never be 0 because a '/' is required to be first.
+			tree.label = label[:variablePos]
+
+			return tree.insert(label[variablePos:], handler)
+		}
+
+		tree.label = label
+		tree.handler = handler
+		return tree
 	}
 
-	// #4
-	for _, child := range n.children {
-		if child.label[0] == label[prefixSize] {
-			child.insertNode(label[prefixSize:], handler)
-			return
+	if parameterPos := strings.Index(label, ":"); parameterPos != -1 {
+		if parameterPos == 0 {
+			// Find end of parameter
+			parameterEnd := strings.Index(label, "/")
+			if parameterEnd == -1 {
+				parameterEnd = len(label)
+			}
+
+            if (len(tree.children) > 1) {
+                panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
+            }
+
+            if (len(tree.children) == 1) {
+                child := tree.children[0]
+
+                if child.label != label[:parameterEnd] || parameterEnd == len(label){
+                    panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
+                }
+
+                return child.insert(label[parameterEnd:], handler)
+            }
+
+			newNode := node{
+				label: label[:parameterEnd],
+
+				parent: tree,
+			}
+
+			// Insert new node at the start of the children nodes.
+			tree.children = append([]*node{&newNode}, tree.children...)
+
+			if parameterEnd == len(label) {
+				newNode.handler = handler
+				return &newNode
+			}
+
+			return newNode.insert(label[parameterEnd:], handler)
+		}
+
+		newNode := tree.insert(label[:parameterPos], nil)
+
+		return newNode.insert(label[parameterPos:], handler)
+	}
+
+	if wildcardPos := strings.Index(label, "*"); wildcardPos != -1 {
+		if wildcardPos == 0 {
+			if wildCardEnd := strings.Index(label, "/"); wildCardEnd != -1 {
+				panic(
+					fmt.Sprintf("wildcard parameter must be the last element of the route '%s'", tree.prefix()+label),
+				)
+			}
+
+			if len(tree.children) > 0 {
+				panic(fmt.Sprintf("handler for route '%s' already exists", tree.prefix()+label))
+			}
+
+			newNode := node{
+				label:   label,
+				handler: handler,
+
+				parent: tree,
+			}
+
+			// Insert new node at the start of the children nodes.
+			tree.children = append([]*node{&newNode}, tree.children...)
+
+			return &newNode
+		}
+
+		newNode := tree.insert(label[:wildcardPos], nil)
+
+		return newNode.insert(label[wildcardPos:], handler)
+	}
+
+	// #2) If we get a route match and the handler slot is free,
+	// we populate it and return.
+	if tree.label == label && tree.handler == nil {
+		tree.handler = handler
+		return tree
+	} else if tree.label == label && tree.handler != nil {
+		if handler == nil {
+			return tree
+		}
+
+		panic(fmt.Sprintf("handler for route '%s' already exists", label))
+	}
+
+	// Find the common prefix for the two labels.
+	prefixLength := findPrefixLength(tree.label, label)
+
+	// #3) If the tree.label is longer that the label and the label
+	// is contained inside the tree.label, we split the node and
+	// associate the handler to the current node.
+	if tree.canSplit() && len(label) == prefixLength {
+		tree.split(prefixLength)
+		tree.handler = handler
+		return tree
+	}
+
+	// #4) If the current node can be split, and the common prefix
+	// is shorted than the label of the current node, we split
+	// the current node and continue insertion.
+	if tree.canSplit() && 0 < prefixLength && prefixLength < len(tree.label) {
+		tree.split(prefixLength)
+	}
+
+	for _, child := range tree.children {
+		if child.isWildcard() || child.isParameter() || child.label[0] == label[prefixLength] {
+			return child.insert(label[prefixLength:], handler)
 		}
 	}
 
-	// #5 There is no child that matches, create a new child.
-	newChild := treeNode{
-		label:   label[prefixSize:],
+	newNode := node{
+		label:   label[prefixLength:],
 		handler: handler,
+		parent:  tree,
 	}
 
-	n.children = append(n.children, &newChild)
+	tree.children = append(tree.children, &newNode)
+
+	return &newNode
+}
+
+// canSplit tests whether the current node can be divided into at least two nodes
+func (tree node) canSplit() bool {
+	return len(tree.label) > 1
+}
+
+// split separates the current node into two parts,
+// the length of which is specified by the splitting point.
+func (tree *node) split(splitPoint int) *node {
+	newNode := node{
+		label:   tree.label[splitPoint:],
+		handler: tree.handler,
+
+		parent:   tree,
+		children: tree.children,
+	}
+
+	tree.label = tree.label[:splitPoint]
+	tree.handler = nil
+	tree.children = []*node{&newNode}
+
+	return &newNode
+}
+
+func (tree node) isWildcard() bool {
+	return tree.label[0] == byte('*')
+}
+
+func (tree node) isParameter() bool {
+	return tree.label[0] == byte(':')
+}
+
+func (tree node) prefix() string {
+	if tree.parent == nil {
+		return ""
+	}
+
+	return tree.parent.path()
+}
+
+func (tree node) path() string {
+	return tree.prefix() + tree.label
+}
+
+// String conforms to the fmt.Stringer interface,
+// so we can easily print out internal tree structure.
+func (tree node) String() string {
+	if tree.label == "" && tree.handler == nil {
+		return "NIL TREE"
+	}
+
+	return tree.string(0)
+}
+
+// string is used to properly indent the tree structure.
+func (tree node) string(offset int) string {
+	buff := &bytes.Buffer{}
+	if offset > 1 {
+		fmt.Fprint(buff, strings.Repeat("   ", int(math.Max(float64(0), float64(offset-1)))))
+	}
+	if offset > 0 {
+		fmt.Fprintf(buff, "└── ")
+	}
+
+	fmt.Fprintf(buff, "%s", tree.label)
+
+	if tree.handler != nil {
+		fmt.Fprint(buff, " ✓")
+	}
+
+	fmt.Fprintln(buff)
+
+	for _, child := range tree.children {
+		fmt.Fprintf(buff, child.string(offset+1))
+	}
+	return string(buff.Bytes())
 }
 
 // findPrefixLength returns the size of the longest common prefix.
@@ -135,28 +294,10 @@ func findPrefixLength(a, b string) int {
 	return i
 }
 
-// Since there is no math.Min() for int type,
-// only of specific size (int64, int32, ...) we must
-// implement our own version that works with plain ints.
 func min(a, b int) int {
-	if a <= b {
+	if a < b {
 		return a
 	}
 
 	return b
-}
-
-// splitNode splits the current node into two,
-// in order to create room for future insertions,
-// and moves the handler to the child node.
-func (n *treeNode) splitNode(splitPoint int) {
-	child := treeNode{
-		label:    n.label[splitPoint:],
-		handler:  n.handler,
-		children: n.children,
-	}
-
-	n.label = n.label[:splitPoint]
-	n.handler = nil
-	n.children = []*treeNode{&child}
 }
