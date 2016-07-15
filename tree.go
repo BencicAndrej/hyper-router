@@ -91,9 +91,19 @@ func (tree *node) insert(label string, handler Handler) *node {
 				parameterEnd = len(label)
 			}
 
-			if !(len(tree.children) == 1 && tree.children[0].label == label[:parameterEnd]) || len(tree.children) != 0 {
-				panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
-			}
+            if (len(tree.children) > 1) {
+                panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
+            }
+
+            if (len(tree.children) == 1) {
+                child := tree.children[0]
+
+                if child.label != label[:parameterEnd] || parameterEnd == len(label){
+                    panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
+                }
+
+                return child.insert(label[parameterEnd:], handler)
+            }
 
 			newNode := node{
 				label: label[:parameterEnd],

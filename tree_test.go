@@ -67,15 +67,19 @@ func TestInsertRoute(t *testing.T) {
 				"/api/v1/users/:id/sites",
 				"/api/v1",
 				"/api/v1/users/:id/sites/*url",
+                "/api/v1/users",
 			},
 			want: leafBranch(
 				"/api/v1",
 				leafBranch(
-					"/users/",
-					leafBranch(
-						":id",
-						leafBranch("/sites", branch("/", leaf("*url"))),
-					),
+					"/users",
+                    branch(
+                        "/",
+                        leafBranch(
+                            ":id",
+                            leafBranch("/sites", branch("/", leaf("*url"))),
+                        ),
+                    ),
 				),
 			),
 		},
