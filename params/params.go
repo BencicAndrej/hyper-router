@@ -2,7 +2,9 @@ package params
 
 import "context"
 
-const ctxParams = "hyper.params"
+type ctxKey int
+
+var paramsKey ctxKey = 0
 
 // Param is a single URL parameter, consisting of a key and a value.
 type Param struct {
@@ -26,15 +28,16 @@ func (ps Params) ByName(name string) (string, bool) {
 	return "", false
 }
 
-// NewContext returns a new context.Context with Params object passed as value.
+// NewContext returns a new context.Context with new Param object consisting
+// of provided key and value.
 func NewContext(ctx context.Context, key string, value string) context.Context {
 	ps, _ := FromContext(ctx)
-	return context.WithValue(ctx, ctxParams, append(ps, Param{key, value}))
+	return context.WithValue(ctx, paramsKey, append(ps, Param{key, value}))
 }
 
 // Extracts params from a given context.
 func FromContext(ctx context.Context) (Params, bool) {
-	p, ok := ctx.Value(ctxParams).(Params)
+	p, ok := ctx.Value(paramsKey).(Params)
 
 	return p, ok
 }

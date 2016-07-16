@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-    "github.com/bencicandrej/hyper-router/params"
+	"github.com/bencicandrej/hyper-router/params"
 )
 
 type node struct {
