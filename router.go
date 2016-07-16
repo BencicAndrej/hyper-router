@@ -92,14 +92,14 @@ func (r *Router) Handle(method string, path string, handler Handler) {
 		r.handlerTrees[method] = root
 	}
 
-	root.insert(path, handler)
+	root.insert(nodeLabel(path), handler)
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
 	if root, ok := r.handlerTrees[req.Method]; ok {
-		if handler := root.getHandler(path); handler != nil {
+		if handler := root.getHandler(nodeLabel(path)); handler != nil {
 			handler.ServeHTTP(context.Background(), w, req)
 			return
 		}

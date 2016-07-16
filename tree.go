@@ -8,7 +8,7 @@ import (
 )
 
 type node struct {
-	label   string
+	label   nodeLabel
 	handler Handler
 
 	parent *node
@@ -17,17 +17,18 @@ type node struct {
 	children []*node
 }
 
-func (tree node) getHandler(label string) Handler {
-	if tree.label == "" && tree.handler == nil {
+func (tree node) getHandler(label nodeLabel) Handler {
+	if tree.isEmpty() {
 		return nil
 	}
 
 	if tree.isWildcard() {
 		return tree.handler
 	}
+
 	if tree.isParameter() {
-		paramEnd := strings.Index(label, "/")
-		if paramEnd == -1 && len(tree.children) == 0 {
+		paramEnd := strings.Index(label.String(), "/")
+		if paramEnd == -1 {
 			return tree.handler
 		}
 
@@ -36,10 +37,12 @@ func (tree node) getHandler(label string) Handler {
 				return child.getHandler(label[paramEnd:])
 			}
 		}
+
+		return nil
 	}
 
-	if tree.label == label {
-		if len(tree.children) == 0 {
+	if strings.HasPrefix(label.String(), tree.label.String()) {
+		if tree.label.String() == label.String() {
 			return tree.handler
 		}
 
@@ -63,15 +66,15 @@ func (tree node) getHandler(label string) Handler {
 // #4) If the prefix < label && prefix < tree.label && prefix > 0, split and pass to new node.
 // #5) If the prefix is equal to the tree.label, we must create a new node, or pass insertion to a child
 // #6) If the prefix is equal to 0, we must panic
-func (tree *node) insert(label string, handler Handler) *node {
+func (tree *node) insert(label nodeLabel, handler Handler) *node {
 	// #1) If tree is empty populate the current element.
-	if tree.label == "" && tree.handler == nil {
+	if tree.isEmpty() {
 		// Label must start with a '/'.
-		if len(label) == 0 || label[0] != byte('/') {
-			panic(fmt.Sprintf("route '%s' must start with '/'", tree.prefix()+label))
+		if !label.isValidRootLabel() {
+			panic(fmt.Sprintf("route '%s' must start with '/'", tree.prefix()+label.String()))
 		}
 
-		if variablePos := strings.IndexAny(label, ":*"); variablePos != -1 {
+		if variablePos := strings.IndexAny(label.String(), ":*"); variablePos != -1 {
 			// Will never be 0 because a '/' is required to be first.
 			tree.label = label[:variablePos]
 
@@ -83,27 +86,27 @@ func (tree *node) insert(label string, handler Handler) *node {
 		return tree
 	}
 
-	if parameterPos := strings.Index(label, ":"); parameterPos != -1 {
+	if parameterPos := strings.Index(label.String(), ":"); parameterPos != -1 {
 		if parameterPos == 0 {
 			// Find end of parameter
-			parameterEnd := strings.Index(label, "/")
+			parameterEnd := strings.Index(label.String(), "/")
 			if parameterEnd == -1 {
 				parameterEnd = len(label)
 			}
 
-            if (len(tree.children) > 1) {
-                panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
-            }
+			if len(tree.children) > 1 {
+				panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label.String()))
+			}
 
-            if (len(tree.children) == 1) {
-                child := tree.children[0]
+			if len(tree.children) == 1 {
+				child := tree.children[0]
 
-                if child.label != label[:parameterEnd] || parameterEnd == len(label){
-                    panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label))
-                }
+				if child.label != label[:parameterEnd] || parameterEnd == len(label) {
+					panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label.String()))
+				}
 
-                return child.insert(label[parameterEnd:], handler)
-            }
+				return child.insert(label[parameterEnd:], handler)
+			}
 
 			newNode := node{
 				label: label[:parameterEnd],
@@ -127,16 +130,16 @@ func (tree *node) insert(label string, handler Handler) *node {
 		return newNode.insert(label[parameterPos:], handler)
 	}
 
-	if wildcardPos := strings.Index(label, "*"); wildcardPos != -1 {
+	if wildcardPos := strings.Index(label.String(), "*"); wildcardPos != -1 {
 		if wildcardPos == 0 {
-			if wildCardEnd := strings.Index(label, "/"); wildCardEnd != -1 {
+			if wildCardEnd := strings.Index(label.String(), "/"); wildCardEnd != -1 {
 				panic(
-					fmt.Sprintf("wildcard parameter must be the last element of the route '%s'", tree.prefix()+label),
+					fmt.Sprintf("wildcard parameter must be the last element of the route '%s'", tree.prefix()+label.String()),
 				)
 			}
 
 			if len(tree.children) > 0 {
-				panic(fmt.Sprintf("handler for route '%s' already exists", tree.prefix()+label))
+				panic(fmt.Sprintf("handler for route '%s' already exists", tree.prefix()+label.String()))
 			}
 
 			newNode := node{
@@ -171,7 +174,7 @@ func (tree *node) insert(label string, handler Handler) *node {
 	}
 
 	// Find the common prefix for the two labels.
-	prefixLength := findPrefixLength(tree.label, label)
+	prefixLength := tree.label.findPrefixLength(label)
 
 	// #3) If the tree.label is longer that the label and the label
 	// is contained inside the tree.label, we split the node and
@@ -190,7 +193,10 @@ func (tree *node) insert(label string, handler Handler) *node {
 	}
 
 	for _, child := range tree.children {
-		if child.isWildcard() || child.isParameter() || child.label[0] == label[prefixLength] {
+		if child.isWildcard() || child.isParameter() {
+			panic(fmt.Sprintf("handler for route '%s' already exists", label))
+		}
+		if child.label[0] == label[prefixLength] {
 			return child.insert(label[prefixLength:], handler)
 		}
 	}
@@ -229,10 +235,19 @@ func (tree *node) split(splitPoint int) *node {
 	return &newNode
 }
 
+// isEmpty checks if the tree node is empty.
+func (tree node) isEmpty() bool {
+	return tree.label == "" && tree.handler == nil
+}
+
+// isWildcard checks if the node is marked with
+// a catchall character at the start of the string.
 func (tree node) isWildcard() bool {
 	return tree.label[0] == byte('*')
 }
 
+// isParameter checks if the node is marked with
+// a parameter character at the start of the string.
 func (tree node) isParameter() bool {
 	return tree.label[0] == byte(':')
 }
@@ -246,7 +261,7 @@ func (tree node) prefix() string {
 }
 
 func (tree node) path() string {
-	return tree.prefix() + tree.label
+	return tree.prefix() + tree.label.String()
 }
 
 // String conforms to the fmt.Stringer interface,
@@ -283,21 +298,69 @@ func (tree node) string(offset int) string {
 	return string(buff.Bytes())
 }
 
-// findPrefixLength returns the size of the longest common prefix.
-func findPrefixLength(a, b string) int {
-	i := 0
-	max := min(len(a), len(b))
-	for i < max && a[i] == b[i] {
-		i++
-	}
-
-	return i
-}
-
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 
 	return b
+}
+
+// nodeLabel is a string alias specialized for manipulating the
+// labels of tree nodes.
+type nodeLabel string
+
+// String method satisfies the stringer interface.
+func (label nodeLabel) String() string {
+	return string(label)
+}
+
+// findPrefixLength returns the size of the longest common prefix.
+func (label nodeLabel) findPrefixLength(newLabel nodeLabel) int {
+	i := 0
+	max := min(len(label), len(newLabel))
+	for i < max && label[i] == newLabel[i] {
+		i++
+	}
+
+	return i
+}
+
+// isValidRootLabel checks if the label can be used as a root node.
+func (label nodeLabel) isValidRootLabel() bool {
+	return len(label) > 0 && label[0] == byte('/')
+}
+
+// getWildcard returns an index of the wildcard and a boolean
+// for signaling whether the wildcard was found.
+func (label nodeLabel) getWildcard() (index int, ok bool) {
+	index = strings.IndexByte(label.String(), byte('*'))
+	if index == -1 {
+		return 0, false
+	}
+
+	return index, true
+}
+
+// getParameter returns an index of the parameter and a boolean
+// for signaling whether the parameter was found.
+func (label nodeLabel) getParameter() (index int, ok bool) {
+	index = strings.IndexByte(label.String(), byte(':'))
+	if index == -1 {
+		return 0, false
+	}
+
+	return index, true
+}
+
+// getVariable returns an index of the first parameter or wildcard
+// encountered, and a boolean for signaling whether there are any
+// variables in the label.
+func (label nodeLabel) getVariable() (index int, ok bool) {
+	index = strings.IndexAny(label.String(), ":*")
+	if index == -1 {
+		return 0, false
+	}
+
+	return index, true
 }

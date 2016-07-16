@@ -67,19 +67,19 @@ func TestInsertRoute(t *testing.T) {
 				"/api/v1/users/:id/sites",
 				"/api/v1",
 				"/api/v1/users/:id/sites/*url",
-                "/api/v1/users",
+				"/api/v1/users",
 			},
 			want: leafBranch(
 				"/api/v1",
 				leafBranch(
 					"/users",
-                    branch(
-                        "/",
-                        leafBranch(
-                            ":id",
-                            leafBranch("/sites", branch("/", leaf("*url"))),
-                        ),
-                    ),
+					branch(
+						"/",
+						leafBranch(
+							":id",
+							leafBranch("/sites", branch("/", leaf("*url"))),
+						),
+					),
 				),
 			),
 		},
@@ -149,8 +149,7 @@ func TestRouteInsertionFailures(t *testing.T) {
 				//}
 			}()
 
-			tree := loadTree(test.routes...)
-			fmt.Print(tree)
+			loadTree(test.routes...)
 		}()
 	}
 }
@@ -197,7 +196,7 @@ func TestAddSingleRoute(t *testing.T) {
 	tree := loadTree("/api/v1/hello/world")
 
 	for _, test := range tests {
-		handler := tree.getHandler(test.route)
+		handler := tree.getHandler(nodeLabel(test.route))
 
 		if (handler != nil) != test.want {
 			t.Errorf("node.getHandler('%s'): %v, wanded %v", test.route, handler != nil, test.want)
@@ -217,14 +216,39 @@ func TestGetHandler(t *testing.T) {
 		"/api/v1/usecases/:type/:id",
 	)
 
-	fmt.Print(tree)
+	fmt.Print(tree.String())
+
+	tests := []struct {
+		route      string
+		hasHandler bool
+	}{
+		{"/api/v1/usecases/:type/:id", true},
+		{"/api/v1/users/:id/sites/*url", true},
+		{"/api/v1/users/:id/sites", true},
+		{"/api/v1/users/:id", true},
+		{"/logout", true},
+		{"/api/v1/users", true},
+		{"/login", true},
+		{"/api/v1/foo/bar", true},
+		{"/foo/bar", false},
+	}
+
+	for _, test := range tests {
+		handler := tree.getHandler(nodeLabel(test.route))
+
+		got := handler != nil
+
+		if got != test.hasHandler {
+			t.Errorf("node.getHandler('%s'): %v, wanted %v", test.route, got, test.hasHandler)
+		}
+	}
 }
 
 func loadTree(routes ...string) *node {
 	tree := &node{}
 
 	for _, route := range routes {
-		tree.insert(route, emptyHandler)
+		tree.insert(nodeLabel(route), emptyHandler)
 	}
 
 	return tree
@@ -236,7 +260,7 @@ func compareTrees(a, b *node) bool {
 
 func leaf(label string) *node {
 	return &node{
-		label:    label,
+		label:    nodeLabel(label),
 		handler:  emptyHandler,
 		children: []*node{},
 	}
@@ -244,7 +268,7 @@ func leaf(label string) *node {
 
 func branch(label string, children ...*node) *node {
 	return &node{
-		label:    label,
+		label:    nodeLabel(label),
 		handler:  nil,
 		children: children,
 	}
@@ -252,7 +276,7 @@ func branch(label string, children ...*node) *node {
 
 func leafBranch(label string, children ...*node) *node {
 	return &node{
-		label:    label,
+		label:    nodeLabel(label),
 		handler:  emptyHandler,
 		children: children,
 	}
