@@ -1,6 +1,6 @@
 package params
 
-import "golang.org/x/net/context"
+import "context"
 
 const ctxParams = "hyper.params"
 

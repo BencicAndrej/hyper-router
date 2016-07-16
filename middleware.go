@@ -1,9 +1,11 @@
 package hyper
 
+import "net/http"
+
 // Middleware is a function that takes a handler,
 // is expected to do some work before or after provided
 // handler and returns its handler.
-type Middleware func(next Handler) Handler
+type Middleware func(next http.Handler) http.Handler
 
 // MiddlewareStack is a list of Middleware.
 type MiddlewareStack struct {
@@ -20,7 +22,7 @@ func NewStack(middleware ...Middleware) MiddlewareStack {
 
 // Do adds the last Handler and returns the final,
 // net/http compatible http.Handler.
-func (stack MiddlewareStack) Do(h Handler) Handler {
+func (stack MiddlewareStack) Do(h http.Handler) http.Handler {
 	// Loop through all middleware backwards and construct
 	// the final middleware.
 	for i := range stack.middleware {
@@ -31,8 +33,8 @@ func (stack MiddlewareStack) Do(h Handler) Handler {
 }
 
 // A shorthand of stack.Do(stack.HandlerFunc(f))
-func (stack MiddlewareStack) DoFunc(f HandlerFunc) Handler {
-	return stack.Do(HandlerFunc(f))
+func (stack MiddlewareStack) DoFunc(f http.HandlerFunc) http.Handler {
+	return stack.Do(http.HandlerFunc(f))
 }
 
 // Append extends a stack, adding the specified middleware

@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"net/http"
 	"strings"
 )
 
 type node struct {
 	label   nodeLabel
-	handler Handler
+	handler http.Handler
 
 	parent *node
 	// children represents an array of child nodes, ordered by priority:
@@ -17,7 +18,7 @@ type node struct {
 	children []*node
 }
 
-func (tree node) getHandler(label nodeLabel) Handler {
+func (tree node) getHandler(label nodeLabel) http.Handler {
 	if tree.isEmpty() {
 		return nil
 	}
@@ -27,13 +28,13 @@ func (tree node) getHandler(label nodeLabel) Handler {
 	}
 
 	if tree.isParameter() {
-		paramEnd := strings.Index(label.String(), "/")
-		if paramEnd == -1 {
+		paramEnd, ok := label.getEndOfVariable()
+		if !ok {
 			return tree.handler
 		}
 
 		for _, child := range tree.children {
-			if child.isWildcard() || child.isParameter() || child.label[0] == byte(label[paramEnd]) {
+			if child.matches(label[paramEnd:]) {
 				return child.getHandler(label[paramEnd:])
 			}
 		}
@@ -66,7 +67,7 @@ func (tree node) getHandler(label nodeLabel) Handler {
 // #4) If the prefix < label && prefix < tree.label && prefix > 0, split and pass to new node.
 // #5) If the prefix is equal to the tree.label, we must create a new node, or pass insertion to a child
 // #6) If the prefix is equal to 0, we must panic
-func (tree *node) insert(label nodeLabel, handler Handler) *node {
+func (tree *node) insert(label nodeLabel, handler http.Handler) *node {
 	// #1) If tree is empty populate the current element.
 	if tree.isEmpty() {
 		// Label must start with a '/'.
@@ -235,6 +236,15 @@ func (tree *node) split(splitPoint int) *node {
 	return &newNode
 }
 
+// matches checks if the node can handle the provided label.
+// To do so, the node must be either a wildcard, a parameter,
+// or starts with the same character (in the tree, it is not
+// possible to have two child nodes that start with the same
+// character).
+func (tree node) matches(label nodeLabel) bool {
+	return tree.isWildcard() || tree.isParameter() || tree.label[0] == byte(label[0])
+}
+
 // isEmpty checks if the tree node is empty.
 func (tree node) isEmpty() bool {
 	return tree.label == "" && tree.handler == nil
@@ -360,6 +370,19 @@ func (label nodeLabel) getVariable() (index int, ok bool) {
 	index = strings.IndexAny(label.String(), ":*")
 	if index == -1 {
 		return 0, false
+	}
+
+	return index, true
+}
+
+// getEndOfVariable returns the index of the first '/' in a label,
+// or, if not found, returns the index of the end of the label,
+// and a ok=false indicating that the '/' was not found before
+// the end of the label.
+func (label nodeLabel) getEndOfVariable() (index int, ok bool) {
+	index = strings.Index(label.String(), "/")
+	if index == -1 {
+		return len(label), false
 	}
 
 	return index, true

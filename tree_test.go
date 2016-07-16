@@ -2,12 +2,11 @@ package hyper
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"net/http"
 	"testing"
 )
 
-var emptyHandler = HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request) {})
+var emptyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
 func TestEmptyNodeTree(t *testing.T) {
 	tree := &node{}
@@ -215,8 +214,6 @@ func TestGetHandler(t *testing.T) {
 		"/api/v1/users/:id/sites/*url",
 		"/api/v1/usecases/:type/:id",
 	)
-
-	fmt.Print(tree.String())
 
 	tests := []struct {
 		route      string
