@@ -74,10 +74,10 @@ func (tree *node) insert(label nodeLabel, handler http.Handler) *node {
 	if tree.isEmpty() {
 		// Label must start with a '/'.
 		if !label.isValidRootLabel() {
-			panic(fmt.Sprintf("route '%s' must start with '/'", tree.prefix()+label.String()))
+			panic(fmt.Sprintf("route '%s%s' must start with '/'", tree.prefix(), label))
 		}
 
-		if variablePos := strings.IndexAny(label.String(), ":*"); variablePos != -1 {
+		if variablePos, ok := label.getVariable(); ok {
 			// Will never be 0 because a '/' is required to be first.
 			tree.label = label[:variablePos]
 
@@ -89,23 +89,20 @@ func (tree *node) insert(label nodeLabel, handler http.Handler) *node {
 		return tree
 	}
 
-	if parameterPos := strings.Index(label.String(), ":"); parameterPos != -1 {
+	if parameterPos, ok := label.getParameter(); ok {
 		if parameterPos == 0 {
 			// Find end of parameter
-			parameterEnd := strings.Index(label.String(), "/")
-			if parameterEnd == -1 {
-				parameterEnd = len(label)
-			}
+			parameterEnd, finishedBeforeEnd := label.getEndOfVariable()
 
 			if len(tree.children) > 1 {
-				panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label.String()))
+				panic(fmt.Sprintf("handler for route '%s%s' already exists", tree.path(), label))
 			}
 
 			if len(tree.children) == 1 {
 				child := tree.children[0]
 
 				if child.label != label[:parameterEnd] || parameterEnd == len(label) {
-					panic(fmt.Sprintf("handler for route '%s' already exists", tree.path()+label.String()))
+					panic(fmt.Sprintf("handler for route '%s%s' already exists", tree.path(), label))
 				}
 
 				return child.insert(label[parameterEnd:], handler)
@@ -120,12 +117,12 @@ func (tree *node) insert(label nodeLabel, handler http.Handler) *node {
 			// Insert new node at the start of the children nodes.
 			tree.children = append([]*node{&newNode}, tree.children...)
 
-			if parameterEnd == len(label) {
-				newNode.handler = handler
-				return &newNode
+			if finishedBeforeEnd {
+				return newNode.insert(label[parameterEnd:], handler)
 			}
 
-			return newNode.insert(label[parameterEnd:], handler)
+			newNode.handler = handler
+			return &newNode
 		}
 
 		newNode := tree.insert(label[:parameterPos], nil)
@@ -133,16 +130,16 @@ func (tree *node) insert(label nodeLabel, handler http.Handler) *node {
 		return newNode.insert(label[parameterPos:], handler)
 	}
 
-	if wildcardPos := strings.Index(label.String(), "*"); wildcardPos != -1 {
+	if wildcardPos, ok := label.getWildcard(); ok {
 		if wildcardPos == 0 {
-			if wildCardEnd := strings.Index(label.String(), "/"); wildCardEnd != -1 {
+			if _, finishedBeforeEnd := label.getEndOfVariable(); finishedBeforeEnd {
 				panic(
-					fmt.Sprintf("wildcard parameter must be the last element of the route '%s'", tree.prefix()+label.String()),
+					fmt.Sprintf("wildcard parameter must be the last element of the route '%s%s'", tree.prefix(), label),
 				)
 			}
 
 			if len(tree.children) > 0 {
-				panic(fmt.Sprintf("handler for route '%s' already exists", tree.prefix()+label.String()))
+				panic(fmt.Sprintf("handler for route '%s%s' already exists", tree.prefix(), label))
 			}
 
 			newNode := node{
