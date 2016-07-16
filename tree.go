@@ -34,7 +34,7 @@ func (tree node) getHandler(label nodeLabel) http.Handler {
 		}
 
 		for _, child := range tree.children {
-			if child.matches(label[paramEnd:]) {
+			if child.supports(label[paramEnd:]) {
 				return child.getHandler(label[paramEnd:])
 			}
 		}
@@ -42,14 +42,16 @@ func (tree node) getHandler(label nodeLabel) http.Handler {
 		return nil
 	}
 
-	if strings.HasPrefix(label.String(), tree.label.String()) {
-		if tree.label.String() == label.String() {
+	// node is static
+	if match, fullMatch := tree.matches(label); match {
+		if fullMatch {
 			return tree.handler
 		}
 
+		treeLen := len(tree.label)
 		for _, child := range tree.children {
-			if child.isWildcard() || child.isParameter() || child.label[0] == byte(label[len(tree.label)]) {
-				return child.getHandler(label[len(tree.label):])
+			if child.supports(label[treeLen:]) {
+				return child.getHandler(label[treeLen:])
 			}
 		}
 	}
@@ -236,13 +238,42 @@ func (tree *node) split(splitPoint int) *node {
 	return &newNode
 }
 
-// matches checks if the node can handle the provided label.
+// supports checks if the node can support the provided label.
 // To do so, the node must be either a wildcard, a parameter,
 // or starts with the same character (in the tree, it is not
 // possible to have two child nodes that start with the same
 // character).
-func (tree node) matches(label nodeLabel) bool {
+func (tree node) supports(label nodeLabel) bool {
 	return tree.isWildcard() || tree.isParameter() || tree.label[0] == byte(label[0])
+}
+
+// matches checks if the provided label is prefixed with the
+// current nodes label.
+func (tree node) matches(label nodeLabel) (match bool, fullMatch bool) {
+	treeLen := len(tree.label)
+	cmpLen := len(label)
+
+	if treeLen > cmpLen {
+		return false, false
+	}
+
+	for i := 0; i < treeLen; i++ {
+		if tree.label[i] != label[i] {
+			return false, false
+		}
+	}
+
+	if treeLen == cmpLen {
+		return true, true
+	}
+
+	return true, false
+}
+
+// exactlyMatches checks if the current node's label is
+// the complete match of the label provided.
+func (tree node) exactlyMatches(label nodeLabel) bool {
+	return string(tree.label) == string(label)
 }
 
 // isEmpty checks if the tree node is empty.
