@@ -2,6 +2,7 @@ package hyper
 
 import (
 	"fmt"
+	"golang.org/x/net/context"
 	"net/http"
 	"testing"
 )
@@ -11,7 +12,7 @@ var emptyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request)
 func TestEmptyNodeTree(t *testing.T) {
 	tree := &node{}
 
-	handler := tree.getHandler("/route/404")
+	handler, _ := tree.getHandler(context.Background(), "/route/404")
 
 	if handler != nil {
 		t.Errorf("node.getHandler('%s'): got %v, wanted nil", "/route/404", handler)
@@ -195,7 +196,7 @@ func TestAddSingleRoute(t *testing.T) {
 	tree := loadTree("/api/v1/hello/world")
 
 	for _, test := range tests {
-		handler := tree.getHandler(nodeLabel(test.route))
+		handler, _ := tree.getHandler(context.Background(), nodeLabel(test.route))
 
 		if (handler != nil) != test.want {
 			t.Errorf("node.getHandler('%s'): %v, wanded %v", test.route, handler != nil, test.want)
@@ -231,7 +232,7 @@ func TestGetHandler(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		handler := tree.getHandler(nodeLabel(test.route))
+		handler, _ := tree.getHandler(context.Background(), nodeLabel(test.route))
 
 		got := handler != nil
 

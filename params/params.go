@@ -27,8 +27,9 @@ func (ps Params) ByName(name string) (string, bool) {
 }
 
 // NewContext returns a new context.Context with Params object passed as value.
-func NewContext(ctx context.Context, params Params) context.Context {
-	return context.WithValue(ctx, ctxParams, params)
+func NewContext(ctx context.Context, key string, value string) context.Context {
+	ps, _ := FromContext(ctx)
+	return context.WithValue(ctx, ctxParams, append(ps, Param{key, value}))
 }
 
 // Extracts params from a given context.

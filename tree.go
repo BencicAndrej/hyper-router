@@ -2,10 +2,13 @@ package hyper
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"net/http"
 	"strings"
+
+    "github.com/bencicandrej/hyper-router/params"
 )
 
 type node struct {
@@ -18,45 +21,47 @@ type node struct {
 	children []*node
 }
 
-func (tree node) getHandler(label nodeLabel) http.Handler {
+func (tree node) getHandler(ctx context.Context, label nodeLabel) (http.Handler, context.Context) {
 	if tree.isEmpty() {
-		return nil
+		return nil, ctx
 	}
 
 	if tree.isWildcard() {
-		return tree.handler
+		return tree.handler, params.NewContext(ctx, string(tree.label)[1:], string(label))
 	}
 
 	if tree.isParameter() {
-		paramEnd, ok := label.getEndOfVariable()
-		if !ok {
-			return tree.handler
+		paramEnd, finishedBeforeEnd := label.getEndOfVariable()
+		if !finishedBeforeEnd {
+			return tree.handler, params.NewContext(ctx, string(tree.label)[1:], string(label))
 		}
 
 		for _, child := range tree.children {
 			if child.supports(label[paramEnd:]) {
-				return child.getHandler(label[paramEnd:])
+				handler, ctx := child.getHandler(ctx, label[paramEnd:])
+
+				return handler, params.NewContext(ctx, string(tree.label)[1:], string(label))
 			}
 		}
 
-		return nil
+		return nil, ctx
 	}
 
 	// node is static
 	if match, fullMatch := tree.matches(label); match {
 		if fullMatch {
-			return tree.handler
+			return tree.handler, ctx
 		}
 
 		treeLen := len(tree.label)
 		for _, child := range tree.children {
 			if child.supports(label[treeLen:]) {
-				return child.getHandler(label[treeLen:])
+				return child.getHandler(ctx, label[treeLen:])
 			}
 		}
 	}
 
-	return nil
+	return nil, ctx
 }
 
 // insert associates the new handler with the route provided,

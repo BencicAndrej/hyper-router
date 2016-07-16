@@ -76,8 +76,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
 	if root, ok := r.handlerTrees[req.Method]; ok {
-		if handler := root.getHandler(nodeLabel(path)); handler != nil {
-			handler.ServeHTTP(w, req)
+		if handler, ctx := root.getHandler(req.Context(), nodeLabel(path)); handler != nil {
+			handler.ServeHTTP(w, req.WithContext(ctx))
 			return
 		}
 	}

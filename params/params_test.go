@@ -71,12 +71,14 @@ func TestContextSetAndRetrieve(t *testing.T) {
 		ctx := context.Background()
 
 		if test.loadParams != nil {
-			ctx = NewContext(ctx, test.loadParams)
+			for _, param := range test.loadParams {
+				ctx = NewContext(ctx, param.Key, param.Value)
+			}
 		}
 
 		params, ok := FromContext(ctx)
 		if ok != test.extractOk {
-			t.Errorf("FromContext(ctx): ok is %v, wanted %v")
+			t.Errorf("FromContext(ctx): ok is %v, wanted %v", ok, test.extractOk)
 			continue
 		}
 
